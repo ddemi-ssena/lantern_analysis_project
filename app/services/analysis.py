@@ -1,105 +1,177 @@
-# app/services/analysis.py
-import pdfplumber
-from fastapi import UploadFile
-import io
-from transformers import pipeline # <-- YENİ IMPORT
+from transformers import pipeline
+from . import narrative_generator
 
-# --- Faz 1'den kalan fonksiyonlar (değişiklik yok) ---
-def extract_text_from_pdf(pdf_file: UploadFile) -> str:
-    if not pdf_file.filename.lower().endswith('.pdf'):
-        raise ValueError("Yüklenen dosya bir PDF olmalıdır.")
-    pdf_bytes = io.BytesIO(pdf_file.file.read())
-    full_text = ""
-    try:
-        with pdfplumber.open(pdf_bytes) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
-        return full_text
-    except Exception as e:
-        print(f"PDF okuma hatası: {e}")
-        raise IOError("PDF dosyası okunamadı veya bozuk.")
-
-def combine_texts_for_analysis(report_text: str, answer1: str, answer2: str, answer3: str) -> str:
-    combined_text = f"""
---- GÜNLÜK RAPOR METNİ ---
-{report_text}
---- STRATEJİK SORULAR VE CEVAPLAR ---
-Soru 1: Bugün teknik olarak en çok ne öğrendin veya hangi konuda zorlandın?
-Cevap: {answer1}
-
-Soru 2: Karşılaştığın bir problemi nasıl çözdün veya çözmek için kimden yardım aldın?
-Cevap: {answer2}
-
-Soru 3: Bugünkü genel motivasyonunu ve memnuniyetini 1-10 arasında nasıl puanlarsın?
-Cevap: {answer3}
-"""
-    return combined_text
-
-# --- YENİ GERÇEK ANALİZ FONKSİYONLARI ---
-
-# app/services/analysis.py - YENİ HALİ
-
-# ...
-def analyze_sentiment(text_to_analyze: str) -> dict:
-    """
-    Verilen metnin duygu analizini yapar (pozitif/negatif).
-    Metin çok uzunsa, pipeline'ın truncate özelliği ile otomatik olarak
-    modelin maksimum limiti olan 512 token'a kısaltılır.
-    """
-    print("Duygu analizi modeli yükleniyor/çalıştırılıyor...")
-    sentiment_analyzer = pipeline(
-        "sentiment-analysis",
+# --- MODELLERİ BİR KERE YÜKLEYİP HAFIZADA TUTALIM (PERFORMANS İÇİN) ---
+try:
+    print("AI Modelleri yükleniyor... Bu işlem birkaç dakika sürebilir.")
+    
+    # Duygu analizi modelini yüklüyoruz
+    SENTIMENT_ANALYZER = pipeline(
+        task="sentiment-analysis",
         model="savasy/bert-base-turkish-sentiment-cased"
     )
     
-    # --- DEĞİŞİKLİK BURADA ---
-    # `truncation=True` parametresi, metin uzunsa modelin limitine göre
-    # otomatik olarak kısaltma yapmasını sağlar. Karakter sayma işini tamamen ortadan kaldırıyoruz.
-    result = sentiment_analyzer(text_to_analyze, truncation=True)
-    # --- DEĞİŞİKLİK SONU ---
-    
-    return result[0]
-def summarize_text(text_to_summarize: str) -> str:
-    """
-    Verilen uzun metni özetler.
-    Not: Bu model de ilk çağrıldığında indirilecektir.
-    """
-    print("Metin özetleme modeli yükleniyor/çalıştırılıyor...")
-    # Sorunlu model yerine, tamamen halka açık ve popüler bir
-    # alternatif olan "facebook/bart-large-cnn" modelini kullanıyoruz.
-    # Bu model aslında İngilizce için eğitilmiş olsa da, `pipeline`
-    # çoğu zaman basit özetlemeler için makul sonuçlar üretebilir.
-    # Daha iyi bir alternatif: `semanur/t5-base-turkish-news-summary`
-    summarizer = pipeline(
-        "summarization", 
+    # Metin özetleme modelini yüklüyoruz
+    SUMMARIZER = pipeline(
+        task="summarization",
         model="google/mt5-small"
     )
-    # Modelin çok kısa veya çok uzun özetler yapmasını engelliyoruz.
-    summary = summarizer(text_to_summarize, max_length=150, min_length=30, do_sample=False)
-    # Çıktı [{'summary_text': '...'}] formatındadır.
-    return summary[0]['summary_text']
+    
+    print("AI Modelleri başarıyla yüklendi.")
 
-def extract_keywords_simple(text_to_analyze: str) -> list[str]:
-    """
-    Metin içinde geçen önceden tanımlı teknik anahtar kelimeleri bulan basit bir fonksiyon.
-    Not: Bu, AI tabanlı değildir ancak başlangıç için çok etkilidir.
-    """
-    print("Anahtar kelimeler çıkarılıyor...")
-    # Bu listeyi projenizin ihtiyaçlarına göre genişletebilirsiniz.
-    TECHNICAL_KEYWORDS = [
-        "java", "spring", "spring boot", "python", "fastapi", "react", "vue",
-        "javascript", "html", "css", "sql", "postgresql", "mysql", "docker",
-        "kubernetes", "aws", "azure", "git", "github", "api", "rest", "jwt",
-        "microservices", "veritabanı", "database", "algoritma", "data structure"
+except Exception as e:
+    print(f"HATA: Modeller yüklenemedi. Hata: {e}")
+    # Hata durumunda değişkenleri None olarak ayarlıyoruz
+    SENTIMENT_ANALYZER = None
+    SUMMARIZER = None
+# --- ANALİZ FONKSİYONLARI ---
+
+def analyze_technical_competence(answer: str) -> dict:
+    """ 'Teknik Yetkinlik' kategorisindeki bir cevabı analiz eder. """
+    sentiment = SENTIMENT_ANALYZER(answer, truncation=True)[0]
+    
+    # Basit anahtar kelime çıkarma
+    technical_keywords = [
+        "java", "spring boot", "jwt", "403 hatası", "dependency", "veritabanı",
+        "api", "rest", "docker", "python", "react", "konfigürasyon"
     ]
+    found_keywords = [kw for kw in technical_keywords if kw in answer.lower()]
+
+    # Başarı ve zorluk belirleme (basit anahtar kelimelerle)
+    achievements = ["öğrendim", "başardım", "çözdüm", "tamamladım"]
+    challenges = ["zorlandım", "hata aldım", "çözemedim", "bulamadım", "ilerleyemedim"]
     
-    found_keywords = set() # Aynı kelimeyi tekrar eklememek için set kullanıyoruz.
-    text_lower = text_to_analyze.lower() # Metni küçük harfe çevirerek aramayı kolaylaştırıyoruz.
+    status = "Nötr"
+    if any(word in answer.lower() for word in achievements):
+        status = "Başarılı"
+    elif any(word in answer.lower() for word in challenges):
+        status = "Zorlanıyor"
+        
+    return {
+        "status": status,
+        "topics": list(set(found_keywords)),
+        "sentiment_label": sentiment['label'],
+        "sentiment_score": sentiment['score']
+    }
+
+def analyze_process_satisfaction(answer: str) -> dict:
+    """ 'Süreç Memnuniyeti' kategorisindeki bir cevabı analiz eder. """
+    sentiment = SENTIMENT_ANALYZER(answer, truncation=True)[0]
     
-    for keyword in TECHNICAL_KEYWORDS:
-        if keyword in text_lower:
-            found_keywords.add(keyword.title()) # Kelimeleri daha güzel göstermek için baş harflerini büyütüyoruz.
-            
-    return list(found_keywords)
+    status = "Orta"
+    if sentiment['label'] == 'positive' and sentiment['score'] > 0.8:
+        status = "Yüksek Motivasyon"
+    elif sentiment['label'] == 'negative' and sentiment['score'] > 0.7:
+        status = "Düşük Motivasyon"
+        
+    return {
+        "status": status,
+        "sentiment_label": sentiment['label'],
+        "sentiment_score": sentiment['score']
+    }
+
+def analyze_proactiveness(answer: str) -> dict:
+    """ 'Proaktiflik' kategorisindeki bir cevabı analiz eder. """
+    # Eylem ve çözüm odaklı kelimeleri arayalım
+    action_words = ["hedefliyorum", "planlıyorum", "yapacağım", "istiyorum", "çözeceğim"]
+    
+    status = "Pasif"
+    if any(word in answer.lower() for word in action_words):
+        status = "Çözüm Odaklı"
+        
+    return {"status": status}
+def run_full_analysis(report_data: dict) -> dict:
+    """
+    Tüm rapor verisini alır, kategori bazlı analizleri çalıştırır ve
+    bütünsel bir sonuç üretir.
+    """
+    if not SENTIMENT_ANALYZER or not SUMMARIZER:
+        return {"error": "AI modelleri yüklenemediği için analiz yapılamıyor."}
+
+    # Adım 1: Tüm kategori bazlı analizleri yap ve sonuçları sakla
+    category_results = {}
+    full_text_for_summary = report_data['report_text']
+
+    for item in report_data['answers']:
+        category = item['category']
+        answer = item['answer']
+        full_text_for_summary += f"\nSoru: {item['question']}\nCevap: {answer}"
+        
+        if category == "Teknik Yetkinlik":
+            category_results['technical'] = analyze_technical_competence(answer)
+        elif category == "Süreç Memnuniyeti":
+            category_results['satisfaction'] = analyze_process_satisfaction(answer)
+        elif category == "Proaktiflik":
+            category_results['proactive'] = analyze_proactiveness(answer)
+    
+    # Adım 2: Kategori sonuçlarına dayanarak bütünsel puanları hesapla
+    tech_score = 5 # Varsayılan
+    if 'technical' in category_results:
+        if category_results['technical']['status'] == "Başarılı":
+            tech_score = 8
+        elif category_results['technical']['status'] == "Zorlanıyor":
+            tech_score = 3
+
+    proactive_score = 5 # Varsayılan
+    if 'proactive' in category_results and category_results['proactive']['status'] == "Çözüm Odaklı":
+        proactive_score = 9
+
+    satisfaction_score = 5 # Varsayılan
+    if 'satisfaction' in category_results:
+        s_score = category_results['satisfaction']['sentiment_score']
+        if category_results['satisfaction']['sentiment_label'] == 'positive':
+            satisfaction_score = 5 + (s_score * 5)
+        else:
+            satisfaction_score = 5 - (s_score * 4)
+
+    development_score = int((tech_score * 0.6) + (proactive_score * 0.4))
+    motivation_score = int(satisfaction_score)
+
+    # Adım 3: Puanlara dayanarak riski belirle
+    risk_level = "Düşük"
+    if motivation_score <= 4 and tech_score <= 4:
+        risk_level = "Yüksek"
+    elif motivation_score <= 6 or tech_score <= 6:
+        risk_level = "Orta"
+
+    # Adım 4: Anlatısal özeti oluştur
+    # Hikayeleştiriciye göndermek için gerekli tüm veriyi bir araya topla
+    narrative_data = {
+        "overall_analysis": {
+            "risk_level": risk_level,
+            "motivation_status": category_results.get('satisfaction', {}).get('status', 'Bilinmiyor'),
+        },
+        "category_details": category_results
+    }
+    summary = narrative_generator.create_narrative_summary(narrative_data)
+    
+    # Adım 5: Tüm sonuçları nihai bir dictionary içinde birleştir
+     # Kategori detaylarından teknik kısımları ayıklayalım
+    cleaned_category_details = {
+        "technical": {
+            "status": category_results.get('technical', {}).get('status', 'Bilinmiyor'),
+            "topics": category_results.get('technical', {}).get('topics', [])
+        },
+        "satisfaction": {
+            "status": category_results.get('satisfaction', {}).get('status', 'Bilinmiyor')
+        },
+        "proactive": {
+            "status": category_results.get('proactive', {}).get('status', 'Bilinmiyor')
+        }
+    }
+
+    final_result = {
+        "overall_analysis": {
+            "development_score": development_score,
+            "motivation_score": motivation_score,
+            "motivation_status": category_results.get('satisfaction', {}).get('status', 'Bilinmiyor'),
+            "risk_level": risk_level,
+            "summary": summary,
+            "key_topics": {
+                "challenges": category_results.get('technical', {}).get('topics', [])
+            }
+        },
+        "category_details": cleaned_category_details # <-- SADELEŞTİRİLMİŞ DETAYLARI GÖNDERİYORUZ
+    }
+    
+    return final_result

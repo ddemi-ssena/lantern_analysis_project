@@ -1,0 +1,17 @@
+--- PDF METNİ ---
+Bugün atanan SP-123 numaralı görevi tamamlamak için çalıştım. Görevin amacı, kullanıcı girişi yapan endpoint'e JWT tabanlı güvenlik eklemekti. Spring Security bağımlılıklarını ekledim ve bir JWT Utility sınıfı yazdım. Ancak, kullanıcı girişi yapmaya çalıştığımda sürekli olarak 403 Forbidden hatası alıyorum ve bu sorunun kaynağını bir türlü bulamadım. Sanırım filter chain yapılandırmasında bir hata yapıyorum. Bu konu üzerinde çok zaman harcadım.
+
+--- SORU-CEVAPLAR ---
+question: Bugün en çok hangi görevde veya teknik konuda zorlandın ve bu zorluğu aşmak için hangi adımları attın?
+category: Teknik Yetkinlik
+answer: JWT entegrasyonunda çok zorlandım, sürekli 403 hatası aldım. Stack Overflow'a baktım, çeşitli blog yazılarını okudum ama bir çözüm bulamadım. Sanırım temel bir konfigürasyon hatası yapıyorum.
+
+---
+question: Bugünkü genel motivasyon seviyeni 1'den 5'e kadar puanla. Bu puanın arkasındaki en önemli sebep neydi?
+category: Süreç Memnuniyeti
+answer: Motivasyonum 2'ydi çünkü bütün gün aynı hatayla uğraştım ve ilerleyemedim. Bu durum oldukça sinir bozucuydu ve kendimi yetersiz hissettim.
+
+---
+question: Yarınki çalışma gününde başarmayı hedeflediğin en önemli şey nedir? Buna ulaşmak için nasıl bir planın var?
+category: Proaktiflik
+answer: Yarın ilk iş olarak mentorumdan bu JWT sorunu için yardım isteyip bu konuyu çözmeyi hedefliyorum. Konuyu anladıktan sonra, bu güvenlik katmanını projeye entegre etmeyi planlıyorum.
