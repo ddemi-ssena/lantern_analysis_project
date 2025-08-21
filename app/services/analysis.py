@@ -1,29 +1,26 @@
 from transformers import pipeline
 from . import narrative_generator
-
-# --- MODELLERİ BİR KERE YÜKLEYİP HAFIZADA TUTALIM (PERFORMANS İÇİN) ---
+import re
 try:
     print("AI Modelleri yükleniyor... Bu işlem birkaç dakika sürebilir.")
     
-    # Duygu analizi modelini yüklüyoruz
+    # Artık model public olduğu için token'a gerek yok.
     SENTIMENT_ANALYZER = pipeline(
-        task="sentiment-analysis",
-        model="savasy/bert-base-turkish-sentiment-cased"
+        "sentiment-analysis",
+        model="ssenos/lantern_fine-tuning-v2"
     )
     
-    # Metin özetleme modelini yüklüyoruz
     SUMMARIZER = pipeline(
         task="summarization",
         model="google/mt5-small"
     )
     
     print("AI Modelleri başarıyla yüklendi.")
-
 except Exception as e:
     print(f"HATA: Modeller yüklenemedi. Hata: {e}")
-    # Hata durumunda değişkenleri None olarak ayarlıyoruz
     SENTIMENT_ANALYZER = None
     SUMMARIZER = None
+    
 # --- ANALİZ FONKSİYONLARI ---
 
 def analyze_technical_competence(answer: str) -> dict:
@@ -97,12 +94,17 @@ def run_full_analysis(report_data: dict) -> dict:
         answer = item['answer']
         full_text_for_summary += f"\nSoru: {item['question']}\nCevap: {answer}"
         
+        contextual_input_text = report_data['report_text'] + " \n[CEVAP]: " + answer
+
         if category == "Teknik Yetkinlik":
-            category_results['technical'] = analyze_technical_competence(answer)
+            category_results['technical'] = analyze_technical_competence(contextual_input_text)
         elif category == "Süreç Memnuniyeti":
-            category_results['satisfaction'] = analyze_process_satisfaction(answer)
+            category_results['satisfaction'] = analyze_process_satisfaction(contextual_input_text)
         elif category == "Proaktiflik":
-            category_results['proactive'] = analyze_proactiveness(answer)
+            category_results['proactive'] = analyze_proactiveness(contextual_input_text)
+        elif category == "İşbirliği / İletişim": # Bu kategoriyi de ekleyelim
+            # İşbirliği analiz fonksiyonunu da oluşturmamız gerekecek (şimdilik pas geçebiliriz)
+            pass 
     
     # Adım 2: Kategori sonuçlarına dayanarak bütünsel puanları hesapla
     tech_score = 5 # Varsayılan
@@ -118,11 +120,19 @@ def run_full_analysis(report_data: dict) -> dict:
 
     satisfaction_score = 5 # Varsayılan
     if 'satisfaction' in category_results:
-        s_score = category_results['satisfaction']['sentiment_score']
-        if category_results['satisfaction']['sentiment_label'] == 'positive':
-            satisfaction_score = 5 + (s_score * 5)
-        else:
-            satisfaction_score = 5 - (s_score * 4)
+        s_label = category_results['satisfaction']['sentiment_label']
+        if s_label == "Olumlu Gelişim":
+            satisfaction_score = 8
+        elif s_label == "Proaktif / Fikir":
+            satisfaction_score = 7
+        elif s_label == "Nötr Raporlama":
+            satisfaction_score = 5
+        elif s_label == "İşbirliği / İletişim":
+            satisfaction_score = 6
+        elif s_label == "Engellenmiş / Yardım İhtiyacı":
+            satisfaction_score = 3
+        elif s_label == "Olumsuz Duygu / Demotive":
+            satisfaction_score = 2
 
     development_score = int((tech_score * 0.6) + (proactive_score * 0.4))
     motivation_score = int(satisfaction_score)
