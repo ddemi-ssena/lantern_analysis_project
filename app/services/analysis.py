@@ -1,324 +1,164 @@
 from transformers import pipeline
 from . import narrative_generator
 import re
-from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
+import os
+import pdfplumber
+import spacy
 
 # --- MODELLERİ YÜKLEME ---
 try:
     print("AI Modelleri yükleniyor... Bu işlem birkaç dakika sürebilir.")
-    
-    # Kendi eğittiğimiz, halka açık fine-tuning modelimiz
-    SENTIMENT_ANALYZER = pipeline(
-        "sentiment-analysis",
-        model="ssenos/lantern_fine-tuning-v2" # veya v1, hangisini kullanıyorsan
-    )
-    
-    # Özetleme modeli
-    SUMMARIZER = pipeline(
-        task="summarization",
-        model="google/mt5-small"
-    )
-    
-    print("AI Modelleri başarıyla yüklendi.")
+    SENTIMENT_ANALYZER = pipeline("sentiment-analysis", model="ssenos/lantern_fine-tuning-v3") # En son eğittiğin versiyonu kullan
+    print("SpaCy Transformer (TRF) modeli yükleniyor...")
+    NLP = spacy.load("tr_core_news_trf")
+    print("Tüm modeller başarıyla yüklendi.")
 except Exception as e:
     print(f"HATA: Modeller yüklenemedi. Hata: {e}")
     SENTIMENT_ANALYZER = None
-    SUMMARIZER = None
+    NLP = None
 
 # --- YARDIMCI ANALİZ FONKSİYONLARI ---
 
-def extract_keywords_tfidf(documents: list[str], target_document_index: int, top_n: int = 7) -> list[str]:
+def load_corpus_from_local_pdfs() -> list[str]:
+    # ... (Bu fonksiyon doğru ve tam, değişiklik yok) ...
+    corpus = []
+    corpus_folder = "corpus_pdfs"
+    if not os.path.isdir(corpus_folder): return []
+    for filename in os.listdir(corpus_folder):
+        if filename.lower().endswith('.pdf'):
+            file_path = os.path.join(corpus_folder, filename)
+            try:
+                text = ""
+                with pdfplumber.open(file_path) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text()
+                        if page_text: text += page_text + "\n"
+                corpus.append(text)
+            except Exception as e:
+                print(f"UYARI: '{filename}' okunamadı: {e}")
+    return corpus
+
+def extract_definitive_keywords(text: str, top_n: int = 7) -> list[str]:
     """
-    Bir metin koleksiyonu (corpus) içindeki belirli bir metnin
-    en önemli anahtar kelimelerini TF-IDF kullanarak çıkarır.
+    Sadece bizim tanımladığımız teknik terimler ve SpaCy'ın bulduğu
+    kesin varlıklar üzerinden anahtar kelime çıkarır. (Düzeltilmiş ve Temizlenmiş)
     """
-    if not documents or not (0 <= target_document_index < len(documents)):
-        return []
-        
+    if not NLP: return []
     try:
-        stop_words_list = [
-            "ve", "bir", "ama", "için", "ile", "bu", "o", "çok", "daha", "gibi", 
-            "ben", "sen", "biz", "siz", "onlar", "benim", "senin", "onun",
-            "olarak", "sonra", "önce", "tüm", "her", "şey", "yok", "var", "evet", "hayır",
-            "dedi", "oldu", "günü", "gün", "kadar", "şey", "bana", "sadece", "artık",
-            "diye", "birlikte", "gibi", "ama", "ancak", "çünkü", "de", "da"
+        keywords = set()
+        text_lower = text.lower()
+
+        known_techs = [
+            "docker", "docker-compose", "postgresql", "spring boot", "spring security", "java", 
+            "python", "fastapi", "vue.js", "react", "axios", "ci/cd", "pipeline", "kubernetes", 
+            "sql", "jwt", "api", "rest", "spacy", "network security group", "sanal makine", 
+            "veritabanı", "entity", "repository", "controller", "endpoint", "dependency", 
+            "dbeaver", "junit", "mockito", "refactor", "@preauthorize", "scoped styles", 
+            "connection refused", "403 forbidden", "network error", "nullpointerexception", "git", "github",
+            "kabul kriterleri", "acceptance criteria", "explain analyze", "join", "sorgu planı"
         ]
-        
-        tfidf_vectorizer = TfidfVectorizer(
-            stop_words=stop_words_list, 
-            # max_features'ı kaldırarak modelin tüm kelimeleri değerlendirmesini sağlıyoruz.
-            # min_df=1, en az 1 dokümanda geçen kelimeleri dahil et (varsayılan)
-            # max_df=0.8, dokümanların %80'inden fazlasında geçen kelimeleri (örn: "proje") ele.
-            max_df=0.8,
-            ngram_range=(1, 2)
-        )
-        
-        tfidf_matrix = tfidf_vectorizer.fit_transform(documents)
-        feature_names = np.array(tfidf_vectorizer.get_feature_names_out())
-        target_scores = tfidf_matrix[target_document_index].toarray().flatten()
-        
-        # En yüksek skora sahip N kelimenin indekslerini bul
-        # argsort küçükten büyüğe sıralar, bu yüzden sondan N tanesini alıyoruz
-        # Eğer kelime sayısı N'den azsa, hepsini al
-        num_keywords_to_get = min(top_n, len(feature_names))
-        top_indices = np.argsort(target_scores)[-num_keywords_to_get:]
-        top_indices_sorted = top_indices[::-1]
-        
-        top_keywords = feature_names[top_indices_sorted]
+        keywords.update({tech for tech in known_techs if tech in text_lower})
 
-        final_keywords = []
-        # Özel isimleri veya teknik olmayan kelimeleri elemek için bir kara liste
-        blacklist = ["ayşe", "zeynep", "ahmet", "mehmet", "saatlerce", "günün", "bunun"]
+        doc = NLP(text)
+        for ent in doc.ents:
+            if ent.label_ in ["ORG", "PRODUCT"] and len(ent.text.strip()) > 2:
+                if ent.text.lower() not in ["zeynep", "ayşe", "can", "ahmet"]:
+                    keywords.add(ent.text.lower())
         
-        for kw in top_keywords:
-            # TF-IDF skorunun çok düşük olmamasını sağla
-            kw_index = np.where(feature_names == kw)[0][0]
-            if target_scores[kw_index] < 0.05: # Çok düşük skorluları atla
-                continue
-            # Kara listede olmamasını sağla
-            if kw in blacklist:
-                continue
-            
-            if len(kw.strip()) < 3 and ' ' not in kw: 
-                continue
-                
-            final_keywords.append(kw)
-
-        # Sonuçta istediğimiz kadar kelime döndürelim (en fazla 5)
-        return final_keywords[:5]
-
+        return list(keywords)[:top_n]
     except Exception as e:
-        print(f"TF-IDF hatası: {e}")
+        print(f"Anahtar kelime çıkarımı hatası: {e}")
         return []
 
 def analyze_process_satisfaction(answer: str) -> dict:
-    """ 'Süreç Memnuniyeti' kategorisindeki bir cevabı analiz eder. """
-    # Bu fonksiyon artık fine-tuning modelimizi kullanıyor, bu yüzden daha akıllı.
     sentiment = SENTIMENT_ANALYZER(answer, truncation=True)[0]
-    
-    # Dönen etikete göre bir durum belirleyelim
     label = sentiment['label']
-    status_map = {
-        "Olumlu Gelişim": "Yüksek Motivasyon",
-        "Proaktif / Fikir": "Yüksek Motivasyon",
-        "Olumsuz Duygu / Demotive": "Düşük Motivasyon",
-        "Engellenmiş / Yardım İhtiyacı": "Düşük Motivasyon",
-        "İşbirliği / İletişim": "Orta",
-        "Nötr Raporlama": "Orta"
-    }
-    status = status_map.get(label, "Orta") # Etiket haritada yoksa varsayılan 'Orta'
-        
-    return {
-        "status": status,
-        "sentiment_label": label, # Kendi etiketimizi döndürüyoruz
-        "sentiment_score": sentiment['score']
-    }
-
-def analyze_proactiveness(answer: str) -> dict:
-    """ 'Proaktiflik' kategorisindeki bir cevabı analiz eder. """
-    sentiment = SENTIMENT_ANALYZER(answer, truncation=True)[0]
-    
-    status = "Pasif"
-    if sentiment['label'] == "Proaktif / Fikir":
-        status = "Çözüm Odaklı"
-        
+    status_map = {"Olumlu Gelişim": "Yüksek Motivasyon", "Proaktif / Fikir": "Yüksek Motivasyon", "Olumsuz Duygu / Demotive": "Düşük Motivasyon", "Engellenmiş / Yardım İhtiyacı": "Düşük Motivasyon", "İşbirliği / İletişim": "Orta", "Nötr Raporlama": "Orta"}
+    status = status_map.get(label, "Orta")
     return {"status": status}
 
-# --- ANA ANALİZ FONKSİYONU ---
+def analyze_proactiveness(answer: str) -> dict:
+    action_words = ["hedefliyorum", "planliyorum", "yapacagim", "istiyorum", "cozecegim", "onerim", "fikrim", "eklersek", "iyilestirebiliriz", "olmali", "olabilir", "kabul kriterleri", "daha iyi yapabilirim"]
+    if any(word in answer.lower() for word in action_words): return {"status": "Çözüm Odaklı"}
+    sentiment = SENTIMENT_ANALYZER(answer, truncation=True)[0]
+    return {"status": "Çözüm Odaklı"} if sentiment['label'] == "Proaktif / Fikir" else {"status": "Pasif"}
+
+def analyze_collaboration(answer: str) -> dict:
+    help_words = ["yardım istedim", "danıştım", "yardımcı oldu", "birlikte çözdük", "yardımcı olmaya çalıştım", "birlikte kafa yorduk", "beyin fırtınası", "yardımım dokundu"]
+    if any(word in answer.lower() for word in help_words): return {"status": "Aktif İletişim"}
+    sentiment = SENTIMENT_ANALYZER(answer, truncation=True)[0]
+    return {"status": "Aktif İletişim"} if sentiment['label'] == "İşbirliği / İletişim" else {"status": "Nötr İletişim"}
+
+# --- ANA ANALİZ FONKSİYONU (BAŞTAN SONA TUTARLI HALE GETİRİLDİ) ---
 
 def run_full_analysis(report_data: dict) -> dict:
-    """
-    Tüm rapor verisini alır, kategori bazlı analizleri çalıştırır ve
-    bütünsel bir sonuç üretir.
-    """
-    if not SENTIMENT_ANALYZER: # SUMMARIZER'ı kontrol etmiyoruz, çünkü B planımız var
-        return {"error": "AI duygu analizi modeli yüklenemediği için analiz yapılamıyor."}
+    if not SENTIMENT_ANALYZER or not NLP:
+        return {"error": "AI modelleri yüklenemediği için analiz yapılamıyor."}
 
-    # --- Adım 1: Veriyi Hazırlama ---
+    # Adım 1: Veriyi Hazırla
+    full_text = report_data['report_text'] + " " + " ".join([item['answer'] for item in report_data['answers']])
+    
+    # Adım 2: Kategori Bazlı Analizler
     category_results = {}
-    full_text_for_analysis = report_data['report_text']
-    
-    # TF-IDF için metin koleksiyonunu (corpus) oluştur
-    corpus = [
-        "Bugün Java ve Spring Boot ile bir API geliştirdim. Veritabanı işlemleri yaptım.",
-        "React kullanarak frontend tarafında bir bileşen yazdım. CSS ve HTML ile uğraştım.",
-        "Docker ve CI/CD pipeline üzerine çalıştım. SQL sorguları yazdım.",
-        # Ve şimdi bugünün gerçek rapor metni ve cevapları:
-        report_data['report_text'] + " " + " ".join([item['answer'] for item in report_data['answers']])
-    ]
-    target_index = len(corpus) - 1
-
-    # --- Adım 2: Kategori Bazlı Analizler ---
     for item in report_data['answers']:
-        category = item['category']
-        answer = item['answer']
-        full_text_for_analysis += f"\nSoru: {item['question']}\nCevap: {answer}"
-        
-        if category == "Süreç Memnuniyeti":
-            category_results['satisfaction'] = analyze_process_satisfaction(answer)
-        elif category == "Proaktiflik":
-            category_results['proactive'] = analyze_proactiveness(answer)
-        # Not: Teknik analiz artık kategori bazlı yapılmıyor.
+        category, answer = item['category'], item['answer']
+        if category == "Süreç Memnuniyeti": category_results['satisfaction'] = analyze_process_satisfaction(answer)
+        elif category == "Proaktiflik": category_results['proactive'] = analyze_proactiveness(answer)
+        elif category == "İşbirliği / İletişim": category_results['collaboration'] = analyze_collaboration(answer)
 
-    # --- Adım 3: Bütünsel Analizler ---
-    key_topics = extract_keywords_tfidf(corpus, target_index, top_n=7)
+    # Adım 3: Bütünsel Analizler (Sinyaller ve Anahtar Kelimeler)
+    text_lower = full_text.lower()
+    positive_signals = {"başarı": ["başardım", "çözdüm", "tamamladım", "çalıştı"]}
+    negative_signals = {"engel": ["hata aldım", "çözemedim", "ilerleyemedim"], "demotivasyon": ["motivasyonum düşüktü", "moralim bozuldu"]}
+    found_pos_signals = {stype for stype, words in positive_signals.items() if any(w in text_lower for w in words)}
+    found_neg_signals = {stype for stype, words in negative_signals.items() if any(w in text_lower for w in words)}
+    key_topics = extract_definitive_keywords(full_text, top_n=7)
     
-    # Bütünsel duygu analizi yapalım (tüm metne bakarak)
-    overall_sentiment = SENTIMENT_ANALYZER(full_text_for_analysis, truncation=True)[0]
+    # Adım 4: Hibrit Puanlama (AI Yorumu + Gerçeklik Kontrolü)
+    satisfaction_status = category_results.get('satisfaction', {}).get('status', 'Orta')
+    proactive_status = category_results.get('proactive', {}).get('status', 'Pasif')
     
-    # --- Adım 4: Puanlama ---
-    tech_score = 5 # Varsayılan
-    if "Engellenmiş / Yardım İhtiyacı" in overall_sentiment['label']:
-        tech_score = 3
-    elif "Olumlu Gelişim" in overall_sentiment['label']:
-        tech_score = 8
-    elif key_topics: # Eğer anahtar kelime varsa, en azından ortalama bir gündür
-        tech_score = 6
-
-    proactive_score = 5 # Varsayılan
-    if 'proactive' in category_results and category_results['proactive']['status'] == "Çözüm Odaklı":
-        proactive_score = 9
-
-    satisfaction_score = 5 # Varsayılan
-    if 'satisfaction' in category_results:
-        # Puanı doğrudan sentiment skorundan değil, durumdan alalım
-        status_puan_map = {"Yüksek Motivasyon": 9, "Orta": 6, "Düşük Motivasyon": 3}
-        satisfaction_score = status_puan_map.get(category_results['satisfaction']['status'], 5)
-
-    development_score = int((tech_score * 0.6) + (proactive_score * 0.4))
-    motivation_score = int(satisfaction_score)
+    if "demotivasyon" in found_neg_signals:
+        satisfaction_status = "Düşük Motivasyon"
     
+    dev_score, mot_score = 5, 5
+    if "başarı" in found_pos_signals: dev_score += 3
+    if "engel" in found_neg_signals: dev_score -= 3
+    if proactive_status == "Çözüm Odaklı": dev_score += 2
+    
+    status_puan_map = {"Yüksek Motivasyon": 9, "Orta": 6, "Düşük Motivasyon": 3}
+    mot_score = status_puan_map.get(satisfaction_status, 5)
+    
+    development_score = max(1, min(10, dev_score))
+    motivation_score = max(1, min(10, mot_score))
+    
+    # Adım 5: Risk, Durum ve Özet
     risk_level = "Düşük"
-    if motivation_score <= 4 or tech_score <= 4:
-        risk_level = "Yüksek"
-    elif motivation_score <= 6 or tech_score <= 6:
-        risk_level = "Orta"
-
-    # --- Adım 5: Özetleme ve Sonuçlandırma ---
-    summary = narrative_generator.create_narrative_summary({
-        "overall_analysis": {"risk_level": risk_level, "motivation_status": category_results.get('satisfaction', {}).get('status', 'Değerlendirilemedi')},
-        "category_details": {"technical": {"topics": key_topics, "status": "Değerlendirilemedi"}, "proactive": category_results.get('proactive')}
-    })
-    
-    cleaned_category_details = {}
-    if 'satisfaction' in category_results:
-        cleaned_category_details['satisfaction'] = {"status": category_results['satisfaction'].get('status')}
-    if 'proactive' in category_results:
-        cleaned_category_details['proactive'] = {"status": category_results['proactive'].get('status')}
-
-    final_result = {
-        "overall_analysis": {
-            "development_score": development_score,
-            "motivation_score": motivation_score,
-            "motivation_status": category_results.get('satisfaction', {}).get('status', 'Değerlendirilemedi'),
-            "risk_level": risk_level,
-            "summary": summary,
-            "key_topics": {
-                "challenges": key_topics # Anahtar kelimeleri buraya ekliyoruz
-            }
-        },
-        "category_details": cleaned_category_details
-    }
-def run_full_analysis(report_data: dict) -> dict:
-
-    """
-    Tüm rapor verisini alır, kategori bazlı analizleri çalıştırır ve
-    bütünsel bir sonuç üretir.
-    """
-    if not SENTIMENT_ANALYZER:
-        return {"error": "AI duygu analizi modeli yüklenemediği için analiz yapılamıyor."}
-
-    # --- Adım 1: Veriyi Hazırlama ---
-    category_results = {}
-    
-    # Tüm metinleri birleştirelim (Hem TF-IDF hem de özet için kullanılacak)
-    full_text_for_analysis = report_data['report_text'] + " " + " ".join([item['answer'] for item in report_data['answers']])
-    
-    # TF-IDF için metin koleksiyonunu (corpus) oluştur
-    corpus = [
-        "Bugün Java ve Spring Boot ile bir API geliştirdim. Veritabanı işlemleri yaptım.",
-        "React kullanarak frontend tarafında bir bileşen yazdım. CSS ve HTML ile uğraştım.",
-        "Docker ve CI/CD pipeline üzerine çalıştım. SQL sorguları yazdım.",
-        full_text_for_analysis # Bugünün birleştirilmiş tam metni
-    ]
-    target_index = len(corpus) - 1
-
-    # --- Adım 2: Bütünsel Anahtar Kelime Çıkarımı ---
-    # !! ÖNEMLİ: Anahtar kelimeleri en başta, tüm metin üzerinden çıkarıyoruz !!
-    key_topics = extract_keywords_tfidf(corpus, target_index, top_n=7)
-    
-    # --- Adım 3: Kategori Bazlı Analizler ---
-    for item in report_data['answers']:
-        category = item['category']
-        answer = item['answer']
+    if "engel" in found_neg_signals and "başarı" not in found_pos_signals: risk_level = "Yüksek"
+    elif "demotivasyon" in found_neg_signals or "engel" in found_neg_signals: risk_level = "Orta"
         
-        if category == "Süreç Memnuniyeti":
-            category_results['satisfaction'] = analyze_process_satisfaction(answer)
-        elif category == "Proaktiflik":
-            category_results['proactive'] = analyze_proactiveness(answer)
-        # Not: Teknik analiz artık burada yapılmıyor.
-
-    # --- Adım 4: Puanlama ---
-    tech_score = 5 # Varsayılan
-    # Fine-tuning modelinden bütünsel bir duygu alalım
-    overall_sentiment = SENTIMENT_ANALYZER(full_text_for_analysis, truncation=True)[0]['label']
-    if overall_sentiment == "Engellenmiş / Yardım İhtiyacı":
-        tech_score = 3
-    elif overall_sentiment == "Olumlu Gelişim":
-        tech_score = 8
-    elif key_topics: # Eğer anahtar kelime varsa, en azından ortalama bir gündür
-        tech_score = 6
-
-    proactive_score = 5 # Varsayılan
-    if 'proactive' in category_results and category_results['proactive']['status'] == "Çözüm Odaklı":
-        proactive_score = 9
-
-    satisfaction_score = 5 # Varsayılan
-    if 'satisfaction' in category_results:
-        status_puan_map = {"Yüksek Motivasyon": 9, "Orta": 6, "Düşük Motivasyon": 3}
-        satisfaction_score = status_puan_map.get(category_results['satisfaction']['status'], 5)
-
-    development_score = int((tech_score * 0.6) + (proactive_score * 0.4))
-    motivation_score = int(satisfaction_score)
+    motivation_status = "Orta"
+    if motivation_score >= 8: motivation_status = "Yüksek Motivasyon"
+    elif motivation_score <= 4: motivation_status = "Düşük Motivasyon"
     
-    risk_level = "Düşük"
-    if motivation_score <= 4 or tech_score <= 4:
-        risk_level = "Yüksek"
-    elif motivation_score <= 6 or tech_score <= 6:
-        risk_level = "Orta"
-
-    # --- Adım 5: Özetleme ve Sonuçlandırma ---
     narrative_data = {
-        "overall_analysis": {
-            "risk_level": risk_level,
-            "motivation_status": category_results.get('satisfaction', {}).get('status', 'Değerlendirilemedi'),
-            "key_topics": {"challenges": key_topics} # !! ÖNEMLİ: Anahtar kelimeleri hikayeleştiriciye gönderiyoruz
-        },
-        "category_details": category_results
+        "overall_analysis": {"risk_level": risk_level, "motivation_status": motivation_status, "key_topics": {"challenges": key_topics}},
+        "category_details": {**category_results, "found_pos_signals": list(found_pos_signals), "found_neg_signals": list(found_neg_signals)}
     }
     summary = narrative_generator.create_narrative_summary(narrative_data)
     
+    # Adım 6: Nihai Çıktıyı Oluştur
     cleaned_category_details = {}
-    if 'satisfaction' in category_results:
-        cleaned_category_details['satisfaction'] = {"status": category_results['satisfaction'].get('status')}
-    if 'proactive' in category_results:
-        cleaned_category_details['proactive'] = {"status": category_results['proactive'].get('status')}
-    # Not: Çıktıda 'technical' kategorisi olmayacak, çünkü bu bilgi artık 'key_topics' içinde.
+    for cat, res in category_results.items():
+        cleaned_category_details[cat] = {"status": res.get("status")}
 
     final_result = {
         "overall_analysis": {
-            "development_score": development_score,
-            "motivation_score": motivation_score,
-            "motivation_status": category_results.get('satisfaction', {}).get('status', 'Değerlendirilemedi'),
-            "risk_level": risk_level,
-            "summary": summary,
-            "key_topics": {
-                "challenges": key_topics # !! ÖNEMLİ: Anahtar kelimeleri nihai sonuca ekliyoruz
-            }
+            "development_score": development_score, "motivation_score": motivation_score,
+            "motivation_status": motivation_status, "risk_level": risk_level,
+            "summary": summary, "key_topics": {"challenges": key_topics}
         },
         "category_details": cleaned_category_details
     }
-    
     return final_result
-    
