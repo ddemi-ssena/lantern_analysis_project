@@ -13,28 +13,28 @@ def create_narrative_summary(analysis_result: dict) -> str:
     overall = analysis_result.get("overall_analysis", {})
     details = analysis_result.get("category_details", {})
     
-    key_topics = overall.get("key_topics", {}).get("challenges", [])
+    keyTopics = overall.get("keyTopics", {}).get("challenges", [])
 
     tech = details.get("technical", {})
     satisfaction = details.get("satisfaction", {})
     proactive = details.get("proactive", {})
     
     # 1. Giriş cümlesi: Genel durumu özetle
-    risk_level = overall.get("risk_level", "Bilinmiyor").lower()
-    motivation_status = overall.get("motivation_status", "Bilinmiyor")
+    riskLevel = overall.get("riskLevel", "Bilinmiyor").lower()
+    motivationStatus = overall.get("motivationStatus", "Bilinmiyor")
     
     summary_parts = []
     
-    if risk_level == "yüksek":
-        summary_parts.append(f"Bugün stajyer için dikkat gerektiren bir gün olmuş. Motivasyon durumu '{motivation_status}' olarak tespit edildi.")
-    elif risk_level == "orta":
-        summary_parts.append(f"Bugün stajyer için bazı zorluklar içeren bir gün olmuş. Genel motivasyon durumu '{motivation_status}'.")
+    if riskLevel == "yüksek":
+        summary_parts.append(f"Bugün stajyer için dikkat gerektiren bir gün olmuş. Motivasyon durumu '{motivationStatus}' olarak tespit edildi.")
+    elif riskLevel == "orta":
+        summary_parts.append(f"Bugün stajyer için bazı zorluklar içeren bir gün olmuş. Genel motivasyon durumu '{motivation_motivationStatusstatus}'.")
     else: # Düşük risk
-        summary_parts.append(f"Stajyer bugün genel olarak verimli bir gün geçirmiş görünüyor. Motivasyon durumu '{motivation_status}'.")
+        summary_parts.append(f"Stajyer bugün genel olarak verimli bir gün geçirmiş görünüyor. Motivasyon durumu '{motivationStatus}'.")
 
-    if key_topics:
+    if keyTopics:
         # Artık elimizde temiz bir liste var, bunu doğrudan kullanabiliriz.
-        tech_topics_str = ", ".join(key_topics)
+        tech_topics_str = ", ".join(keyTopics)
         
         # Durum bilgisi için kategori detaylarına bakalım
         tech_status = details.get("technical", {}).get("status", "Bilinmiyor")

@@ -19,17 +19,17 @@ class ProactiveAnalysisDetail(BaseModel):
 # --- Ana Sonuç Modeli ---
 
 class OverallAnalysis(BaseModel):
-    development_score: int
-    motivation_score: int
-    motivation_status: str
-    risk_level: str
+    developmentScore: int
+    motivationScore: int
+    motivationStatus: str
+    riskLevel: str
     summary: str
-    key_topics: Dict[str, List[str]]
+    keyTopics: Dict[str, List[str]]
 
 class AnalysisResult(BaseModel):
     """
     Analiz sonrası API'den dönecek olan nihai sonucu temsil eden model.
     """
-    intern_id: int = Field(..., description="Analizi yapılan stajyerin ID'si.")
-    overall_analysis: OverallAnalysis
-    category_details: Dict[str, Any] # Daha esnek olması için Any kullanıyoruz
+    internId: int = Field(..., description="Analizi yapılan stajyerin ID'si.")
+    overallAnalysis: OverallAnalysis
+    categoryDetails: Dict[str, Any] # Daha esnek olması için Any kullanıyoruz

@@ -1,11 +1,10 @@
-# app/main.py - SON VE TAM VERSİYON (Hata ayıklama logları ile)
-
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
-from app.models import AnalysisResult
+from app.models import AnalysisResult, OverallAnalysis # OverallAnalysis'i de import et
 from app.services import analysis
 import json
 import io
 import pdfplumber
+from typing import Optional
 
 app = FastAPI(
     title="LanternAnalytics API",
@@ -30,47 +29,78 @@ def read_root():
 
 @app.post("/analyze", response_model=AnalysisResult)
 async def analyze_intern_report(
-    pdf_report: UploadFile = File(...),
+    pdf_report: Optional[UploadFile] = File(None),
     answers_json: str = Form(...),
     intern_id: int = Form(...),
     analysis_service: analysis = Depends(get_analysis_service)
 ):
     try:
-        # --- Adım 1 & 2: PDF ve JSON okuma ---
-        print("[DEBUG] Adım 1: PDF okuma başlıyor...")
-        pdf_bytes = io.BytesIO(await pdf_report.read())
+        # ==========================================================
+        # ==     EKSİK OLAN PDF OKUMA KISMI DOLDURULDU            ==
+        # ==========================================================
         report_text = ""
-        with pdfplumber.open(pdf_bytes) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text() or ""
-                report_text += text + "\n"
-        print("[DEBUG] Adım 1 Tamamlandı: PDF okundu.")
+        if pdf_report and pdf_report.filename:
+            print("[DEBUG] PDF okunuyor...")
+            try:
+                # Gelen dosyayı byte olarak oku
+                pdf_bytes = io.BytesIO(await pdf_report.read())
+                # pdfplumber ile byte verisini aç
+                with pdfplumber.open(pdf_bytes) as pdf:
+                    # Tüm sayfaları gez ve metni birleştir
+                    for page in pdf.pages:
+                        text = page.extract_text() or ""
+                        report_text += text + "\n"
+                print("[DEBUG] PDF okuma tamamlandı.")
+            except Exception as e:
+                print(f"[UYARI] PDF okunamadı ama analiz devam ediyor. Hata: {e}")
+                report_text = "" # Hata olursa metni güvenli olması için boşalt
+        else:
+            print("[DEBUG] PDF gönderilmedi, bu adım atlandı.")
+        # ==========================================================
 
-        print("[DEBUG] Adım 2: JSON ayrıştırma başlıyor...")
+        # Adım 2: JSON Okuma
+        print("[DEBUG] JSON ayrıştırılıyor...")
         answers_list = json.loads(answers_json)
-        print("[DEBUG] Adım 2 Tamamlandı: JSON ayrıştırıldı.")
         
-        # --- Adım 3: Analiz için veriyi hazırla ve çağır ---
+        # Adım 3: Analiz için veriyi hazırla ve Analiz Servisini Çağır
         report_data = {
             "report_text": report_text,
-            "answers": answers_list
+            "answers": answers_list,
+            "intern_id": intern_id
         }
 
-        print("[DEBUG] Adım 3: Tam analiz fonksiyonu (run_full_analysis) çağrılıyor...")
-        final_analysis = analysis_service.run_full_analysis(report_data)
-        print("[DEBUG] Adım 3 Tamamlandı: Analiz bitti.")
+        # final_analysis_dict artık "düz" bir sözlük
+        final_analysis_dict = analysis_service.run_full_analysis(report_data)
+        print("[DEBUG] Analiz tamamlandı.")
 
-        if "error" in final_analysis:
-             raise HTTPException(status_code=500, detail=final_analysis["error"])
+        if "error" in final_analysis_dict:
+             raise HTTPException(status_code=500, detail=final_analysis_dict["error"])
         
-        # --- Adım 4: Sonucu döndür ---
-        return AnalysisResult(
-            intern_id=intern_id,
-            **final_analysis
-        )
+        # Adım 4: Sonucu Pydantic Modeline Göre İnşa Et
+        try:
+            overall_data = OverallAnalysis(
+                developmentScore=final_analysis_dict.get("developmentScore"),
+                motivationScore=final_analysis_dict.get("motivationScore"),
+                motivationStatus=final_analysis_dict.get("motivationStatus"),
+                riskLevel=final_analysis_dict.get("riskLevel"),
+                summary=final_analysis_dict.get("summary"),
+                keyTopics=final_analysis_dict.get("keyTopics")
+            )
+
+            final_result_model = AnalysisResult(
+                internId=final_analysis_dict.get("internId"),
+                overallAnalysis=overall_data,
+                categoryDetails=final_analysis_dict.get("categoryDetails")
+            )
+
+            return final_result_model
+        except Exception as e:
+            print("Pydantic modeli oluşturulurken hata oluştu!")
+            print(f"Gelen Ham Veri: {final_analysis_dict}") 
+            raise e
+
     except Exception as e:
-        # Bu blok, analysis_service.run_full_analysis içindeki herhangi bir hatayı yakalayacak
-        print("!!!!!!!!!!!!!!!!! ANALİZ SIRASINDA BEKLENMEDİK BİR HATA YAKALANDI !!!!!!!!!!!!!!!!!")
+        print("!!!!!!!!!!!!!!!!! ENDPOINT'TE BEKLENMEDİK BİR HATA YAKALANDI !!!!!!!!!!!!!!!!!")
         import traceback
-        traceback.print_exc() # Hatanın tüm detaylarını terminale yazdır
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Sunucuda beklenmedik bir hata oluştu: {e}")
