@@ -144,11 +144,13 @@ def run_full_analysis(report_data: dict) -> dict:
         return {"error": "AI modelleri yüklenemediği için analiz yapılamıyor."}
 
     # Adım 1: Veriyi Hazırla
-    full_text = report_data.get('report_text', '') + " " + " ".join([item.get('answer', '') for item in report_data.get('answers', [])])
+    # Eğer report_data'da answers yoksa boş liste olarak başlat
+    answers = report_data.get('answers', [])
+    full_text = report_data.get('report_text', '') + " " + " ".join([item.get('answer', '') for item in answers])
     
     # Adım 2: Kategori Bazlı Analizler
     category_results = {}
-    for item in report_data.get('answers', []):
+    for item in answers:
         category, answer = item.get('category'), item.get('answer')
         if not category or not answer: continue
         if category == "Süreç Memnuniyeti": category_results['satisfaction'] = analyze_process_satisfaction(answer)
@@ -161,7 +163,9 @@ def run_full_analysis(report_data: dict) -> dict:
     negative_signals = {"engel": ["hata aldım", "çözemedim", "ilerleyemedim"], "demotivasyon": ["motivasyonum düşüktü", "moralim bozuldu"]}
     found_pos_signals = {stype for stype, words in positive_signals.items() if any(w in text_lower for w in words)}
     found_neg_signals = {stype for stype, words in negative_signals.items() if any(w in text_lower for w in words)}
-    keyTopicsList = extract_definitive_keywords(full_text, top_n=7)
+    
+    # Anahtar kelimeleri doğrudan challenges altında döndür
+    key_topics_challenges = extract_definitive_keywords(full_text, top_n=7)
     
     # Adım 4: Hibrit Puanlama
     satisfaction_status = category_results.get('satisfaction', {}).get('status', 'Orta')
@@ -191,26 +195,26 @@ def run_full_analysis(report_data: dict) -> dict:
     elif motivationScore <= 4: motivationStatus = "Düşük Motivasyon"
     
     narrativeData = {
-        "overall_analysis": {"risk_level": riskLevel, "motivation_status": motivationStatus, "key_topics": {"challenges": keyTopicsList}},
-        "category_details": {**category_results, "found_pos_signals": list(found_pos_signals), "found_neg_signals": list(found_neg_signals)}
+        "overall_analysis": {"risk_level": riskLevel, "motivation_status": motivationStatus, "key_topics": {"challenges": key_topics_challenges}},
+        "category_details": {**category_results} # Artık `found_pos_signals` ve `found_neg_signals` doğrudan burada değil.
     }
     summary = narrative_generator.create_narrative_summary(narrativeData)
     
-    # Adım 6: Nihai Çıktıyı Oluştur (category_results'ı temizle)
-    categoryDetails = {}
-    for cat, res in category_results.items():
-        categoryDetails[cat] = {"status": res.get("status")}
-
-    # --- YENİ YAPI: DÜZ BİR SÖZLÜK DÖNDÜRÜYORUZ ---
+    # Adım 6: Nihai Çıktıyı Oluştur (category_results'ı düzeltildi)
+    # categoryDetails doğrudan Python modelimizdeki gibi dönecek
+    
+    # --- YENİ YAPI: PYDANTIC MODELİNE UYUMLU DÜZ BİR SÖZLÜK DÖNDÜRÜYORUZ ---
     flat_result = {
         "internId": report_data.get("intern_id"),
-        "developmentScore": developmentScore, 
-        "motivationScore": motivationScore,
-        "motivationStatus": motivationStatus, 
-        "riskLevel": riskLevel,
-        "summary": summary, 
-        "keyTopics": {"challenges": keyTopicsList},
-        "categoryDetails": categoryDetails
+        "overallAnalysis": { # Bu kısım OverallAnalysis modeline karşılık geliyor
+            "developmentScore": developmentScore,
+            "motivationScore": motivationScore,
+            "motivationStatus": motivationStatus,
+            "riskLevel": riskLevel,
+            "summary": summary,
+            "keyTopics": {"challenges": key_topics_challenges} # Pydantic modelindeki gibi
+        },
+        "categoryDetails": category_results # category_results zaten Dict[str, Any] yapısında
     }
     
     return flat_result

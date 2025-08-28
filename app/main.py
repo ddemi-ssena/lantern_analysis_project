@@ -4,7 +4,7 @@ from app.services import analysis
 import json
 import io
 import pdfplumber
-from typing import Optional
+from typing import Optional,  List, Dict, Any
 
 app = FastAPI(
     title="LanternAnalytics API",
