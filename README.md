@@ -3,7 +3,7 @@
 LanternAnalytics API is an AI-powered FastAPI service designed to analyze internship reports and provide data-driven feedback to mentors.
 It processes PDF reports, extracts technical insights, evaluates motivation levels, and generates natural-language summaries to support internship evaluation workflows.
 
-This service is designed to integrate with an intern management web platform via API endpoints.
+This service is designed to integrate with an internship management web platform via API endpoints.
 
 ✨ Key Features
 📄 Automated PDF Report Analysis
@@ -14,7 +14,7 @@ Cleans and preprocesses textual data for NLP analysis
 
 😊 Sentiment & Motivation Analysis
 
-Uses a fine-tuned Transformer model (ssenos/lantern_fine-tuning-v3)
+Uses a fine-tuned Transformer model: ssenos/lantern_fine-tuning-v3
 
 Detects motivation trends and emotional tone in reports
 
@@ -101,8 +101,9 @@ pip install -r requirements.txt
 Run the API server
 uvicorn app.main:app --reload
 
+🌐 API Access
 
-API will be available at:
+API base URL:
 
 http://127.0.0.1:8000
 
@@ -114,7 +115,10 @@ http://127.0.0.1:8000/docs
 🔌 API Usage
 Analyze Internship Report
 
+Endpoint:
+
 POST /analyze
+
 
 Used to analyze internship reports submitted from the web platform.
 
@@ -152,7 +156,8 @@ Corporate internship tracking systems
 Sena Özişçi
 AI Developer Candidate
 
-GitHub: https://github.com/ddemi-ssena
+GitHub:
+👉 https://github.com/ddemi-ssena
 
 📜 License
 
