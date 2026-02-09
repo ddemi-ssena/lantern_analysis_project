@@ -1,127 +1,124 @@
-🚀 LanternAnalytics API
+# 🚀 LanternAnalytics API
 
-LanternAnalytics API is an AI-powered FastAPI service designed to analyze internship reports and provide data-driven feedback to mentors.
-It processes PDF reports, extracts technical insights, evaluates motivation levels, and generates natural-language summaries to support internship evaluation workflows.
+![Python](https://img.shields.io/badge/Python-3.8+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-AI%20Backend-green)
+![Transformers](https://img.shields.io/badge/HuggingFace-NLP-yellow)
+![SpaCy](https://img.shields.io/badge/SpaCy-Turkish%20NLP-orange)
+![License](https://img.shields.io/badge/License-MIT-purple)
 
-This service is designed to integrate with an internship management web platform via API endpoints.
+**LanternAnalytics API** is an AI-powered FastAPI backend service designed to analyze internship reports and generate data-driven feedback for mentors.
 
-✨ Key Features
-📄 Automated PDF Report Analysis
+The system processes PDF internship reports, extracts technical insights, evaluates motivation levels, and produces natural-language summaries to support internship evaluation workflows.
 
-Extracts text from uploaded internship reports (PDF)
+It is designed to integrate seamlessly into internship management platforms via API endpoints.
 
-Cleans and preprocesses textual data for NLP analysis
+---
 
-😊 Sentiment & Motivation Analysis
+## ✨ Key Features
 
-Uses a fine-tuned Transformer model: ssenos/lantern_fine-tuning-v3
+### 📄 Automated PDF Report Analysis
+- Extracts text from uploaded internship report PDFs  
+- Cleans and preprocesses textual data for NLP tasks  
+- Identifies relevant technical content  
 
-Detects motivation trends and emotional tone in reports
+### 😊 Sentiment & Motivation Analysis
+- Uses a fine-tuned Transformer model:  
+  **ssenos/lantern_fine-tuning-v3**
+- Detects emotional tone and motivation trends  
+- Provides structured motivation insights  
 
-🧠 NLP & Technical Entity Recognition
+### 🧠 NLP & Technical Entity Recognition
+Powered by SpaCy Turkish Transformer model:
 
-Powered by SpaCy Turkish Transformer model
+Detects technologies and technical skills such as:
 
-Identifies technical skills and keywords such as:
+- Docker  
+- FastAPI  
+- PostgreSQL  
+- Other domain-specific technologies  
 
-Docker
+### 📊 Hybrid Performance Scoring
+Combines multiple analytical signals:
 
-FastAPI
+- Technical competency indicators  
+- Motivation analysis  
+- Proactiveness signals  
 
-PostgreSQL
+➡️ Produces a structured development/performance score.
 
-Other domain-specific technologies
+### 📝 Narrative Insight Generation
+- Converts analytical results into natural-language summaries  
+- Generates concise mentor-friendly feedback  
+- Helps streamline evaluation processes  
 
-📊 Hybrid Performance Scoring
+---
 
-Combines multiple signals:
+## 🏗️ System Architecture
 
-Technical competency indicators
+LanternAnalytics functions as a backend AI analysis service:
 
-Motivation signals
+- Connected to internship platforms via API endpoints  
+- Receives PDF reports and structured Q&A data  
+- Processes analysis asynchronously  
+- Returns structured insights and summaries  
 
-Proactiveness indicators
+This modular architecture allows easy integration into existing systems.
 
-➡️ Produces a structured development score.
+---
 
-📝 Narrative Insight Generation
+## 🛠️ Tech Stack
 
-Converts analytical results into mentor-friendly summaries
+### Backend
+- FastAPI  
+- Python  
 
-Generates concise natural-language feedback
+### AI / NLP
+- Hugging Face Transformers  
+- SpaCy Turkish Transformer (`tr_core_news_trf`)  
+- PyTorch  
 
-🏗️ System Architecture
+### Data Processing
+- Pydantic  
+- pdfplumber  
 
-LanternAnalytics works as a backend AI analysis service:
+### Server
+- Uvicorn  
 
-Connected to an internship web platform via API endpoints
+---
 
-Receives PDF reports and structured answers from the platform
+## 📋 Requirements
 
-Processes data asynchronously
+Minimum requirements:
 
-Returns analytical insights and summaries
+- Python 3.8+
+- FastAPI
+- Pydantic
+- Transformers & PyTorch
+- SpaCy (`tr_core_news_trf`)
+- pdfplumber
 
-This design allows seamless integration into existing internship management systems.
+Install dependencies:
 
-🛠️ Tech Stack
-Category	Technology
-Backend Framework	FastAPI
-NLP / AI	Hugging Face Transformers, SpaCy
-Data Validation	Pydantic
-PDF Processing	pdfplumber
-Server	Uvicorn
-Language	Python
-📋 Requirements
-
-Python 3.8+
-
-FastAPI
-
-Pydantic
-
-Transformers & PyTorch
-
-SpaCy (tr_core_news_trf)
-
-pdfplumber
-
-Install all dependencies via:
-
+```bash
 pip install -r requirements.txt
-
 ⚙️ Installation
-Clone the repository
+1️⃣ Clone Repository
 git clone https://github.com/ddemi-ssena/lantern_analysis_project.git
 cd lantern_analysis_project
-
-Install dependencies
+2️⃣ Install Dependencies
 pip install -r requirements.txt
-
-Run the API server
+3️⃣ Run API Server
 uvicorn app.main:app --reload
-
 🌐 API Access
-
-API base URL:
-
+Base URL
 http://127.0.0.1:8000
-
-
-Swagger documentation:
-
+Swagger Documentation
 http://127.0.0.1:8000/docs
-
 🔌 API Usage
 Analyze Internship Report
-
 Endpoint:
 
 POST /analyze
-
-
-Used to analyze internship reports submitted from the web platform.
-
 Parameters
 Parameter	Type	Description
 pdf_report	File	Internship report PDF
@@ -140,9 +137,7 @@ lantern_analysis_project/
 ├── corpus_pdfs/
 ├── requirements.txt
 └── README.md
-
 🎯 Use Cases
-
 Internship performance evaluation
 
 AI-powered educational analytics
@@ -152,7 +147,6 @@ Mentor feedback automation
 Corporate internship tracking systems
 
 👩‍💻 Author
-
 Sena Özişçi
 AI Developer Candidate
 
@@ -160,6 +154,6 @@ GitHub:
 👉 https://github.com/ddemi-ssena
 
 📜 License
-
 This project is licensed under the MIT License.
+
 See the LICENSE file for details.
